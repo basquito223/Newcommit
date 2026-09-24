@@ -84,6 +84,7 @@ export interface OfficialConsularRule {
   isFullyVerified: boolean;   // Si false, le moteur bascule en insufficient_information
   applicableNationalities?: string[]; // Nationalités ou pays d'origine auxquels la règle s'applique spécifiquement
   excludedNationalities?: string[];   // Nationalités expressément exclues du champ d'application de la règle
+  accommodationType?: string;         // Type d'hébergement rattaché (ex: 'hotel', 'attestation_accueil', 'non_justifie')
 }
 
 // ============================================================================

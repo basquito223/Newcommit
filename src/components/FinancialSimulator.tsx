@@ -5,67 +5,48 @@ import { sound } from '../utils/feedback';
 import { OfficialSourceBadge } from './OfficialSourceBadge';
 import { AFRICAN_COUNTRIES } from '../data/countriesData';
 import { MOROCCO_BILATERAL_EXEMPT_COUNTRIES } from '../data/bilateralAgreements';
+import { OFFICIAL_EXCHANGE_RATES } from '../data/officialConsularRules';
 
-interface FinancialSimulatorProps {
-  currentDestination?: DestinationType;
-  currentVisaReason?: VisaReasonType;
-  countryOfOrigin?: string;
+export interface FinancialSimulatorRequirementResult {
+  requiredAmountFcfa: number;
+  requiredOriginalCurrency: string;
+  visaFeeFcfa: number;
+  visaFeeOriginal: string;
+  ruleCitation: string;
+  legalBasis: string;
+  dailyRate?: number;
+  rateCadUsed: number;
+  rateEurUsed: number;
 }
 
-export const FinancialSimulator: React.FC<FinancialSimulatorProps> = ({
-  currentDestination,
-  currentVisaReason,
-  countryOfOrigin,
-}) => {
-  // Derive initial base destination country
-  const getInitialCountry = (): string => {
-    const d = (currentDestination || 'france').toLowerCase();
-    if (d.includes('canada')) return 'canada';
-    if (d.includes('maroc')) return 'maroc';
-    if (d.includes('turqui')) return 'turquie';
-    if (d.includes('dubai')) return 'dubai';
-    return 'france';
-  };
+export function calculateFinancialSimulatorRequirements(params: {
+  selectedCountry: string;
+  isStudy: boolean;
+  stayDuration: number;
+  accommodation: AccommodationType;
+  tuitionFeesCad?: number;
+  selectedOriginCountry?: string;
+}): FinancialSimulatorRequirementResult {
+  const {
+    selectedCountry,
+    isStudy,
+    stayDuration,
+    accommodation,
+    tuitionFeesCad = 16000,
+    selectedOriginCountry = 'Mali',
+  } = params;
 
-  const getInitialReason = (): 'etudes' | 'visite' => {
-    if (currentVisaReason === 'etudes' || currentDestination === 'france_etudes' || currentDestination === 'canada_etudes') {
-      return 'etudes';
-    }
-    return 'visite';
-  };
+  const RATE_EUR_FCFA = OFFICIAL_EXCHANGE_RATES.EUR_TO_FCFA;
+  const RATE_CAD_FCFA = OFFICIAL_EXCHANGE_RATES.CAD_TO_FCFA;
+  const RATE_USD_FCFA = OFFICIAL_EXCHANGE_RATES.USD_TO_FCFA;
 
-  const [selectedCountry, setSelectedCountry] = useState<string>(getInitialCountry);
-  const [selectedOriginCountry, setSelectedOriginCountry] = useState<string>(() => {
-    if (countryOfOrigin && countryOfOrigin.trim()) {
-      const match = AFRICAN_COUNTRIES.find(
-        (c) => c.name.toLowerCase() === countryOfOrigin.toLowerCase() || c.id.toLowerCase() === countryOfOrigin.toLowerCase()
-      );
-      return match ? match.name : countryOfOrigin;
-    }
-    return 'Mali';
-  });
-  const [selectedReason, setSelectedReason] = useState<'etudes' | 'visite'>(getInitialReason);
-  const [stayDuration, setStayDuration] = useState<number>(getInitialReason() === 'etudes' ? 12 : 15);
-  const [accommodation, setAccommodation] = useState<AccommodationType>('residence_etudiante');
-  const [tuitionFeesCad, setTuitionFeesCad] = useState<number>(16000);
-  const [applicantBudgetFcfa, setApplicantBudgetFcfa] = useState<number>(
-    getInitialReason() === 'etudes' ? 7500000 : 1500000
-  );
-
-  // Official Conversion rates
-  const RATE_EUR_FCFA = 655.957;
-  const RATE_CAD_FCFA = 443.0;
-  const RATE_USD_FCFA = 600.0;
-
-  // Compute required funds
   let requiredAmountFcfa = 0;
   let requiredOriginalCurrency = '';
   let visaFeeFcfa = 0;
   let visaFeeOriginal = '';
   let ruleCitation = '';
   let legalBasis = '';
-
-  const isStudy = (selectedCountry === 'france' || selectedCountry === 'canada') && selectedReason === 'etudes';
+  let dailyRate: number | undefined;
 
   if (selectedCountry === 'france' && isStudy) {
     const months = Math.max(stayDuration, 1);
@@ -87,6 +68,7 @@ export const FinancialSimulator: React.FC<FinancialSimulatorProps> = ({
     } else {
       dailyEur = 120.00;
     }
+    dailyRate = dailyEur;
     const totalEur = dailyEur * days;
     requiredAmountFcfa = Math.round(totalEur * RATE_EUR_FCFA);
     requiredOriginalCurrency = `${totalEur.toLocaleString('fr-FR')} € (${dailyEur} €/jour pour ${days} jours)`;
@@ -164,12 +146,89 @@ export const FinancialSimulator: React.FC<FinancialSimulatorProps> = ({
     const dailyUsd = 80;
     const totalUsd = dailyUsd * days;
     requiredAmountFcfa = Math.round(totalUsd * RATE_USD_FCFA);
-    requiredOriginalCurrency = `${totalUsd.toLocaleString('fr-FR')} $ USD (${dailyUsd} $ USD/j)`;
+    requiredOriginalCurrency = `${totalUsd.toLocaleString('fr-FR')} $ USD (~${dailyUsd} $ USD/j)`;
     visaFeeFcfa = Math.round(110 * RATE_USD_FCFA);
-    visaFeeOriginal = '110 $ USD (visa 30j)';
-    ruleCitation = 'GDRFA Émirats Arabes Unis : Billet aller-retour et hébergement vérifiable requis.';
-    legalBasis = 'Réglementation GDRFA Dubaï';
+    visaFeeOriginal = '~110 $ USD (visa touriste 30j)';
+    ruleCitation = 'GDRFA Dubaï : Garantie de subsistance (~100 $ / jour) recommandée pour l’entrée sur le territoire.';
+    legalBasis = 'Réglementation GDRFA / ICP Émirats Arabes Unis';
   }
+
+  return {
+    requiredAmountFcfa,
+    requiredOriginalCurrency,
+    visaFeeFcfa,
+    visaFeeOriginal,
+    ruleCitation,
+    legalBasis,
+    dailyRate,
+    rateCadUsed: RATE_CAD_FCFA,
+    rateEurUsed: RATE_EUR_FCFA,
+  };
+}
+
+interface FinancialSimulatorProps {
+  currentDestination?: DestinationType;
+  currentVisaReason?: VisaReasonType;
+  countryOfOrigin?: string;
+}
+
+export const FinancialSimulator: React.FC<FinancialSimulatorProps> = ({
+  currentDestination,
+  currentVisaReason,
+  countryOfOrigin,
+}) => {
+  // Derive initial base destination country
+  const getInitialCountry = (): string => {
+    const d = (currentDestination || 'france').toLowerCase();
+    if (d.includes('canada')) return 'canada';
+    if (d.includes('maroc')) return 'maroc';
+    if (d.includes('turqui')) return 'turquie';
+    if (d.includes('dubai')) return 'dubai';
+    return 'france';
+  };
+
+  const getInitialReason = (): 'etudes' | 'visite' => {
+    if (currentVisaReason === 'etudes' || currentDestination === 'france_etudes' || currentDestination === 'canada_etudes') {
+      return 'etudes';
+    }
+    return 'visite';
+  };
+
+  const [selectedCountry, setSelectedCountry] = useState<string>(getInitialCountry);
+  const [selectedOriginCountry, setSelectedOriginCountry] = useState<string>(() => {
+    if (countryOfOrigin && countryOfOrigin.trim()) {
+      const match = AFRICAN_COUNTRIES.find(
+        (c) => c.name.toLowerCase() === countryOfOrigin.toLowerCase() || c.id.toLowerCase() === countryOfOrigin.toLowerCase()
+      );
+      return match ? match.name : countryOfOrigin;
+    }
+    return 'Mali';
+  });
+  const [selectedReason, setSelectedReason] = useState<'etudes' | 'visite'>(getInitialReason);
+  const [stayDuration, setStayDuration] = useState<number>(getInitialReason() === 'etudes' ? 12 : 15);
+  const [accommodation, setAccommodation] = useState<AccommodationType>('residence_etudiante');
+  const [tuitionFeesCad, setTuitionFeesCad] = useState<number>(16000);
+  const [applicantBudgetFcfa, setApplicantBudgetFcfa] = useState<number>(
+    getInitialReason() === 'etudes' ? 7500000 : 1500000
+  );
+
+  const isStudy = (selectedCountry === 'france' || selectedCountry === 'canada') && selectedReason === 'etudes';
+
+  const {
+    requiredAmountFcfa,
+    requiredOriginalCurrency,
+    visaFeeFcfa,
+    visaFeeOriginal,
+    ruleCitation,
+    legalBasis,
+  } = calculateFinancialSimulatorRequirements({
+    selectedCountry,
+    isStudy,
+    stayDuration,
+    accommodation,
+    tuitionFeesCad,
+    selectedOriginCountry,
+  });
 
   const deltaFcfa = applicantBudgetFcfa - requiredAmountFcfa;
   const coveragePercent = Math.min(Math.round((applicantBudgetFcfa / (requiredAmountFcfa || 1)) * 100), 100);

@@ -48,6 +48,7 @@ export const OFFICIAL_CONSULAR_RULES: OfficialConsularRule[] = [
     amount: 65,
     currency: 'EUR',
     unit: 'per_day',
+    accommodationType: 'hotel',
     effectiveFrom: '2017-05-10',
     sourceName: 'CESEDA (Art. R311-3) & Arrêté ministériel du 10 mai 2017 fixant les montants de référence (NOR: INTV1700778C)',
     sourceUrl: 'https://www.service-public.fr/particuliers/vosdroits/F2190',
@@ -63,6 +64,7 @@ export const OFFICIAL_CONSULAR_RULES: OfficialConsularRule[] = [
     amount: 32.5,
     currency: 'EUR',
     unit: 'per_day',
+    accommodationType: 'attestation_accueil',
     effectiveFrom: '2017-05-10',
     sourceName: 'CESEDA (Art. R311-3) & Arrêté du 27 décembre 2000 / Arrêté du 10 mai 2017',
     sourceUrl: 'https://www.service-public.fr/particuliers/vosdroits/F2190',
@@ -78,6 +80,7 @@ export const OFFICIAL_CONSULAR_RULES: OfficialConsularRule[] = [
     amount: 120,
     currency: 'EUR',
     unit: 'per_day',
+    accommodationType: 'non_justifie',
     effectiveFrom: '2017-05-10',
     sourceName: 'CESEDA & Service-Public.fr (Seuils d’entrée sur le territoire français)',
     sourceUrl: 'https://www.service-public.fr/particuliers/vosdroits/F2190',
@@ -263,15 +266,36 @@ export const OFFICIAL_CONSULAR_RULES: OfficialConsularRule[] = [
 ];
 
 /**
+ * Taux de change officiels et auditables (référence unique SSoT)
+ */
+export const OFFICIAL_EXCHANGE_RATES = {
+  EUR_TO_FCFA: 655.957,
+  CAD_TO_FCFA: 445,
+  USD_TO_FCFA: 600.0,
+} as const;
+
+/**
+ * Récupère une règle officielle par son identifiant unique.
+ */
+export function getOfficialRuleById(ruleId: string): OfficialConsularRule | undefined {
+  return OFFICIAL_CONSULAR_RULES.find((r) => r.id === ruleId);
+}
+
+/**
  * Résolveur sécurisé des règles officielles contextuel.
- * Prend en compte la destination, le motif, la catégorie et la nationalité du demandeur.
+ * Prend en compte la destination, le motif, la catégorie, la nationalité du demandeur
+ * ainsi que le contexte optionnel (ex: type d'hébergement ou identifiant direct).
  * Ne renvoie la règle que si elle est entièrement vérifiée (`isFullyVerified === true`).
  */
 export function resolveOfficialRule(
   destination: string,
   visaType: string,
   category: OfficialConsularRule['ruleCategory'],
-  countryOfOrigin?: string
+  countryOfOrigin?: string,
+  options?: {
+    accommodationType?: string;
+    ruleId?: string;
+  }
 ): OfficialConsularRule | null {
   const destClean = (destination || '').toLowerCase().trim();
   const visaClean = (visaType || '').toLowerCase().trim();
@@ -297,6 +321,33 @@ export function resolveOfficialRule(
   });
 
   if (candidateRules.length === 0) return null;
+
+  // Si un ruleId explicite est demandé
+  if (options?.ruleId) {
+    const matchedById = candidateRules.find((r) => r.id === options.ruleId);
+    if (matchedById) return matchedById;
+  }
+
+  // Si un type d'hébergement est spécifié pour un seuil de subsistance
+  if (options?.accommodationType && category === 'subsistence_threshold') {
+    const acc = options.accommodationType;
+    if (acc === 'attestation_accueil') {
+      const attestationRule = candidateRules.find(
+        (r) => r.id === 'RULE-FR-SUBSISTENCE-ATTESTATION-ACCUEIL' || r.accommodationType === 'attestation_accueil'
+      );
+      if (attestationRule) return attestationRule;
+    } else if (acc === 'non_justifie' || acc === 'sans_justificatif') {
+      const noLodgingRule = candidateRules.find(
+        (r) => r.id === 'RULE-FR-SUBSISTENCE-NO-LODGING-PROOF' || r.accommodationType === 'non_justifie'
+      );
+      if (noLodgingRule) return noLodgingRule;
+    } else if (acc === 'hotel' || acc === 'hotel_confirme') {
+      const hotelRule = candidateRules.find(
+        (r) => r.id === 'RULE-FR-SUBSISTENCE-HOTEL' || r.accommodationType === 'hotel'
+      );
+      if (hotelRule) return hotelRule;
+    }
+  }
 
   // 2. Si le pays d'origine / nationalité est fourni, vérifier en priorité les règles spécifiques
   if (originClean.length > 0) {

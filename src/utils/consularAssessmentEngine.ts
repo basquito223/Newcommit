@@ -10,7 +10,7 @@ import {
   InterviewPreparationQuestion,
   AssessmentMeta,
 } from '../types/assessment';
-import { resolveOfficialRule, getCandidateRules, OFFICIAL_CONSULAR_RULES } from '../data/officialConsularRules';
+import { resolveOfficialRule, getCandidateRules, OFFICIAL_CONSULAR_RULES, OFFICIAL_EXCHANGE_RATES } from '../data/officialConsularRules';
 
 // ============================================================================
 // 1. ÉVALUATION CONTEXTUELLE DE COMPLÉTUDE DES DONNÉES
@@ -377,25 +377,19 @@ export function evaluateConsularProfile(
     // Calcul précis selon le type d'hébergement vérifié
     const accType = answers.accommodationType;
 
-    // On utilise la règle officielle selon l'hébergement
-    let dailyRateEur = 65; // Barème avec hôtel
-    let ruleId = 'RULE-FR-SUBSISTENCE-HOTEL';
-    if (accType === 'attestation_accueil') {
-      dailyRateEur = 32.5;
-      ruleId = 'RULE-FR-SUBSISTENCE-ATTESTATION-ACCUEIL';
-    } else if (accType === 'non_justifie') {
-      dailyRateEur = 120;
-      ruleId = 'RULE-FR-SUBSISTENCE-NO-LODGING-PROOF';
-    }
-
-    const officialRule = resolveOfficialRule(
+    // Dérivation directe depuis le registre officiel selon le justificatif d'hébergement
+    const subsistenceRule = resolveOfficialRule(
       'france',
       'tourisme_visite',
       'subsistence_threshold',
-      answers.countryOfOrigin
+      answers.countryOfOrigin,
+      { accommodationType: accType }
     );
+    const dailyRateEur = subsistenceRule?.amount ?? 65;
+    const ruleId = subsistenceRule?.id ?? 'RULE-FR-SUBSISTENCE-HOTEL';
+
     const totalRequiredEur = dailyRateEur * duration;
-    const totalRequiredFcfa = Math.round(totalRequiredEur * 655.957);
+    const totalRequiredFcfa = Math.round(totalRequiredEur * OFFICIAL_EXCHANGE_RATES.EUR_TO_FCFA);
 
     if (answers.fundingSource === 'autofinancement') {
       const budget = answers.availableBudgetFcfa;
@@ -595,7 +589,7 @@ export function evaluateConsularProfile(
 
     if (canadaStudentRule && canadaStudentRule.amount) {
       const cadAmount = canadaStudentRule.amount; // 20 635 $ CAD
-      const rateCadToFcfa = 445; // Taux de conversion de référence vers la zone FCFA
+      const rateCadToFcfa = OFFICIAL_EXCHANGE_RATES.CAD_TO_FCFA; // Taux de conversion de référence vers la zone FCFA
       const licoTargetFcfa = Math.round(cadAmount * rateCadToFcfa); // ~9 182 575 FCFA
 
       p2Evidence.push({
@@ -1001,6 +995,7 @@ export function evaluateConsularProfile(
       ? insuranceRule.ruleDescription
       : 'Code Communautaire des Visas (Règlement CE n° 810/2009, Art. 15) : souscription obligatoire d’une assurance médicale de voyage couvrant un montant minimal de 30 000 EUR.';
     const insRuleId = insuranceRule ? insuranceRule.id : 'RULE-SCHENGEN-INSURANCE-MANDATORY';
+    const minInsuranceThresholdEur = insuranceRule?.amount ?? 30000;
 
     if (answers.hasTravelInsurance === undefined || answers.hasTravelInsurance === null) {
       p4Findings.push({
@@ -1046,28 +1041,28 @@ export function evaluateConsularProfile(
     } else if (
       answers.travelInsuranceCoverageEur === undefined ||
       answers.travelInsuranceCoverageEur === null ||
-      answers.travelInsuranceCoverageEur < 30000
+      answers.travelInsuranceCoverageEur < minInsuranceThresholdEur
     ) {
       const declaredCoverage = answers.travelInsuranceCoverageEur ?? 0;
       p4Findings.push({
         id: 'FIND-SCHENGEN-INSURANCE-COVERAGE-DEFICIT',
         pillarId: 'purpose_and_logistics',
         type: 'evidence_gap',
-        title: 'Plafond de garantie de l’assurance voyage inférieur au seuil légal (30 000 €)',
-        declaredFact: `Assurance voyage déclarée avec un plafond de garantie de ${declaredCoverage.toLocaleString('fr-FR')} EUR (seuil légal obligatoire : 30 000 EUR).`,
+        title: `Plafond de garantie de l’assurance voyage inférieur au seuil légal (${minInsuranceThresholdEur.toLocaleString('fr-FR')} €)`,
+        declaredFact: `Assurance voyage déclarée avec un plafond de garantie de ${declaredCoverage.toLocaleString('fr-FR')} EUR (seuil légal obligatoire : ${minInsuranceThresholdEur.toLocaleString('fr-FR')} EUR).`,
         officialBasis: insBasis,
         sourceRuleId: insRuleId,
         findingRationale:
-          'L’article 15 § 2 du Code Communautaire des Visas dispose que la couverture minimale doit s’élever à 30 000 EUR. Une police déclarée avec un montant inférieur ne remplit pas le critère réglementaire de validité documentaire.',
+          `L’article 15 § 2 du Code Communautaire des Visas dispose que la couverture minimale doit s’élever à ${minInsuranceThresholdEur.toLocaleString('fr-FR')} EUR. Une police déclarée avec un montant inférieur ne remplit pas le critère réglementaire de validité documentaire.`,
         isDirectBlocker: false,
         priorityEligibility: { eligible: true, weight: 'high' },
         suggestedAction:
-          'Demander à votre assureur une attestation d’extension ou souscrire un avenant portant le plafond de garantie à 30 000 EUR au minimum.',
+          `Demander à votre assureur une attestation d’extension ou souscrire un avenant portant le plafond de garantie à ${minInsuranceThresholdEur.toLocaleString('fr-FR')} EUR au minimum.`,
         recommendedEvidence: [
           {
             targetPillar: 'purpose_and_logistics',
             relatedChecklistKey: 'travel_insurance',
-            documentName: 'Attestation ou avenant d’assurance voyage certifiant un plafond ≥ 30 000 €',
+            documentName: `Attestation ou avenant d’assurance voyage certifiant un plafond ≥ ${minInsuranceThresholdEur.toLocaleString('fr-FR')} €`,
             consularUtility: 'Prouve le respect du seuil minimal obligatoire imposé par le Code Communautaire des Visas.',
             category: 'mandatory_by_regulation',
           },

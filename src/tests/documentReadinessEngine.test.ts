@@ -1301,7 +1301,7 @@ export function runDocumentReadinessEngineAudit(): { passed: boolean; message: s
       evidenceBackedVerifiedCount,
       evidenceBackedCompliantCount,
       evidenceBackedNonCompliantCount,
-      verificationAuditTests: 15,
+      verificationAuditTests: 17,
     },
   };
 }
@@ -2489,10 +2489,165 @@ export function runEvidenceIntegrityAndVerificationAudit(): { passed: boolean; m
     console.log('  ✓ Test 15 Passed: Complete READY causal chain exposed on every READY item');
   }
 
+  // --------------------------------------------------------------------------
+  // TEST 16: Upload threshold boundary logic for availableBalanceCad (Canada Study LICO)
+  // --------------------------------------------------------------------------
+  {
+    const subEvent: EvidenceVerificationEvent = {
+      id: 'EVT-T16-BANK',
+      evidenceId: 'UPL-T16-BANK',
+      outcome: 'verified',
+      method: 'structured_validation',
+      timestamp: '2026-09-13T09:00:00Z',
+      rationale: 'Attestation bancaire certifiée conforme',
+      performedBy: 'consular_officer',
+    };
+
+    // Sub-test 16a: availableBalanceCad < 20635 (e.g. 20634 CAD) -> non_compliant
+    const summaryDeficit = buildDocumentReadinessSummary([], actionPlan, {
+      destination: 'canada',
+      visaType: 'etudes',
+      uploadedDocuments: [
+        {
+          id: 'UPL-T16-BANK',
+          checklistKey: 'bank_statements',
+          fileName: 'bank_below_lico.pdf',
+          availableBalanceCad: 20634,
+          isLegible: true,
+          verificationEvent: subEvent,
+        },
+      ],
+    });
+    const bankDeficit = summaryDeficit.items.find((i) => i.id === 'DOC-BANK-STATEMENTS')!;
+    if (bankDeficit.evidenceComplianceStatus !== 'non_compliant') {
+      return {
+        passed: false,
+        message: `TEST 16a FAILED: Expected non_compliant for 20634 CAD, got ${bankDeficit.evidenceComplianceStatus}`,
+        details: bankDeficit,
+      };
+    }
+    if (!bankDeficit.complianceRuleIds?.includes('RULE-CA-STUDENT-LICO-2024')) {
+      return {
+        passed: false,
+        message: 'TEST 16a FAILED: Expected complianceRuleIds to include RULE-CA-STUDENT-LICO-2024',
+        details: bankDeficit,
+      };
+    }
+
+    // Sub-test 16b: availableBalanceCad >= 20635 (e.g. 20635 CAD) -> compliant when verified
+    const summaryMet = buildDocumentReadinessSummary([], actionPlan, {
+      destination: 'canada',
+      visaType: 'etudes',
+      uploadedDocuments: [
+        {
+          id: 'UPL-T16-BANK',
+          checklistKey: 'bank_statements',
+          fileName: 'bank_meets_lico.pdf',
+          availableBalanceCad: 20635,
+          isLegible: true,
+          isVerified: true,
+          verificationStatus: 'verified',
+          verificationMethod: 'structured_validation',
+          verificationEventId: 'EVT-T16-BANK',
+          verificationEvent: subEvent,
+        },
+      ],
+      verificationEvents: [subEvent],
+    });
+    const bankMet = summaryMet.items.find((i) => i.id === 'DOC-BANK-STATEMENTS')!;
+    if (bankMet.evidenceComplianceStatus !== 'compliant') {
+      return {
+        passed: false,
+        message: `TEST 16b FAILED: Expected compliant for 20635 CAD, got ${bankMet.evidenceComplianceStatus}`,
+        details: bankMet,
+      };
+    }
+
+    console.log('  ✓ Test 16 Passed: Upload availableBalanceCad boundary verified (20634 -> non_compliant, 20635 -> compliant)');
+  }
+
+  // --------------------------------------------------------------------------
+  // TEST 17: Upload threshold boundary logic for insuranceCoverageEur (Schengen Insurance)
+  // --------------------------------------------------------------------------
+  {
+    const insEvent: EvidenceVerificationEvent = {
+      id: 'EVT-T17-INS',
+      evidenceId: 'UPL-T17-INS',
+      outcome: 'verified',
+      method: 'document_review',
+      timestamp: '2026-09-13T09:00:00Z',
+      rationale: 'Police d assurance médicale certifiée conforme',
+      performedBy: 'consular_officer',
+    };
+
+    // Sub-test 17a: insuranceCoverageEur < 30000 (e.g. 29999 EUR) -> non_compliant
+    const summaryDeficit = buildDocumentReadinessSummary([], actionPlan, {
+      destination: 'france',
+      visaType: 'tourisme',
+      uploadedDocuments: [
+        {
+          id: 'UPL-T17-INS',
+          checklistKey: 'travel_insurance',
+          fileName: 'ins_below_30k.pdf',
+          insuranceCoverageEur: 29999,
+          isLegible: true,
+          verificationEvent: insEvent,
+        },
+      ],
+      verificationEvents: [insEvent],
+    });
+    const insDeficit = summaryDeficit.items.find((i) => i.id === 'DOC-TRAVEL-INSURANCE')!;
+    if (insDeficit.evidenceComplianceStatus !== 'non_compliant') {
+      return {
+        passed: false,
+        message: `TEST 17a FAILED: Expected non_compliant for 29999 EUR, got ${insDeficit.evidenceComplianceStatus}`,
+        details: insDeficit,
+      };
+    }
+    if (!insDeficit.complianceRuleIds?.includes('RULE-SCHENGEN-INSURANCE-MANDATORY')) {
+      return {
+        passed: false,
+        message: 'TEST 17a FAILED: Expected complianceRuleIds to include RULE-SCHENGEN-INSURANCE-MANDATORY',
+        details: insDeficit,
+      };
+    }
+
+    // Sub-test 17b: insuranceCoverageEur >= 30000 (e.g. 30000 EUR) -> compliant when verified
+    const summaryMet = buildDocumentReadinessSummary([], actionPlan, {
+      destination: 'france',
+      visaType: 'tourisme',
+      uploadedDocuments: [
+        {
+          id: 'UPL-T17-INS',
+          checklistKey: 'travel_insurance',
+          fileName: 'ins_meets_30k.pdf',
+          insuranceCoverageEur: 30000,
+          isLegible: true,
+          isVerified: true,
+          verificationStatus: 'verified',
+          verificationMethod: 'document_review',
+          verificationEventId: 'EVT-T17-INS',
+          verificationEvent: insEvent,
+        },
+      ],
+      verificationEvents: [insEvent],
+    });
+    const insMet = summaryMet.items.find((i) => i.id === 'DOC-TRAVEL-INSURANCE')!;
+    if (insMet.evidenceComplianceStatus !== 'compliant') {
+      return {
+        passed: false,
+        message: `TEST 17b FAILED: Expected compliant for 30000 EUR, got ${insMet.evidenceComplianceStatus}`,
+        details: insMet,
+      };
+    }
+
+    console.log('  ✓ Test 17 Passed: Upload insuranceCoverageEur boundary verified (29999 -> non_compliant, 30000 -> compliant)');
+  }
+
   return {
     passed: true,
-    message: 'All 15 Evidence Integrity & Verification Audit Layer test cases PASSED successfully.',
-    details: { totalTests: 15, passed: 15 },
+    message: 'All 17 Evidence Integrity & Verification Audit Layer test cases PASSED successfully.',
+    details: { totalTests: 17, passed: 17 },
   };
 }
 

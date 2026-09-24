@@ -22,6 +22,7 @@ import {
   VerificationPerformer,
 } from '../types/documentReadiness';
 import { deriveDocumentReadinessState } from './evidenceStateMachine';
+import { resolveOfficialRule } from '../data/officialConsularRules';
 
 // ============================================================================
 // VISAFlow V2.3.6 — DETERMINISTIC EVIDENCE PROVENANCE & APPLICABILITY ENGINE
@@ -2384,16 +2385,26 @@ export function evaluateDocumentCompliance(
         f.id.includes('BUDGET-UNDECLARED') ||
         f.isDirectBlocker
     );
+
+    // Résolution dynamique des seuils officiels applicables depuis le registre
+    const licoRule = resolveOfficialRule('canada', 'etudes', 'subsistence_threshold');
+    const minLicoCad = licoRule?.amount ?? 20635;
+    const licoRuleId = licoRule?.id ?? 'RULE-CA-STUDENT-LICO-2024';
+
+    const frStudentRule = resolveOfficialRule('france', 'etudes', 'subsistence_threshold');
+    const minFrStudentEur = frStudentRule?.amount ? frStudentRule.amount * 12 : 7380;
+    const frStudentRuleId = frStudentRule?.id ?? 'RULE-FR-STUDENT-CESEDA-R422';
+
     const isBalanceInsufficient =
       (uploadedDoc?.availableBalanceFcfa !== undefined &&
         uploadedDoc.availableBalanceFcfa < (isCanada ? 10000000 : 4000000)) ||
-      (uploadedDoc?.availableBalanceCad !== undefined && uploadedDoc.availableBalanceCad < 20635) ||
-      (uploadedDoc?.availableBalanceEur !== undefined && uploadedDoc.availableBalanceEur < 7380);
+      (uploadedDoc?.availableBalanceCad !== undefined && uploadedDoc.availableBalanceCad < minLicoCad) ||
+      (uploadedDoc?.availableBalanceEur !== undefined && uploadedDoc.availableBalanceEur < minFrStudentEur);
 
     if (deficitFinding || isBalanceInsufficient) {
       return {
         complianceStatus: 'non_compliant',
-        complianceRuleIds: [isCanada ? 'RULE-CA-STUDENT-LICO-2024' : 'RULE-FR-STUDENT-CESEDA-R422'],
+        complianceRuleIds: [isCanada ? licoRuleId : frStudentRuleId],
         complianceRationale: 'Available funds remain below the minimum regulatory threshold.',
       };
     }
@@ -2401,7 +2412,7 @@ export function evaluateDocumentCompliance(
     if (isEvidenceDirectlyVerified) {
       return {
         complianceStatus: 'compliant',
-        complianceRuleIds: [isCanada ? 'RULE-CA-STUDENT-LICO-2024' : 'RULE-FR-STUDENT-CESEDA-R422'],
+        complianceRuleIds: [isCanada ? licoRuleId : frStudentRuleId],
         complianceRationale:
           'Historique de compte et solde bancaire certifiés conformes aux barèmes financiers réglementaires en vigueur.',
       };
@@ -2457,23 +2468,28 @@ export function evaluateDocumentCompliance(
         f.id.startsWith('FIND-SCHENGEN-INSURANCE-ABSENT') ||
         f.isDirectBlocker
     );
+
+    const insuranceRule = resolveOfficialRule('france', 'tourisme_visite', 'insurance_requirement');
+    const minInsuranceEur = insuranceRule?.amount ?? 30000;
+    const insuranceRuleId = insuranceRule?.id ?? 'RULE-SCHENGEN-INSURANCE-MANDATORY';
+
     const isInsuranceInvalid =
       uploadedDoc?.isInsuranceCompliant === false ||
-      (uploadedDoc?.insuranceCoverageEur !== undefined && uploadedDoc.insuranceCoverageEur < 30000);
+      (uploadedDoc?.insuranceCoverageEur !== undefined && uploadedDoc.insuranceCoverageEur < minInsuranceEur);
 
     if (deficitFinding || isInsuranceInvalid) {
       return {
         complianceStatus: 'non_compliant',
-        complianceRuleIds: ['RULE-SCHENGEN-INSURANCE-30K'],
+        complianceRuleIds: [insuranceRuleId],
         complianceRationale:
-          'Police d’assurance médicale ne couvrant pas le plafond statutaire obligatoire de 30 000 € ou présentant une couverture expirée.',
+          `Police d’assurance médicale ne couvrant pas le plafond statutaire obligatoire de ${minInsuranceEur.toLocaleString('fr-FR')} € ou présentant une couverture expirée.`,
       };
     }
 
     if (isEvidenceDirectlyVerified) {
       return {
         complianceStatus: 'compliant',
-        complianceRuleIds: ['RULE-SCHENGEN-INSURANCE-30K'],
+        complianceRuleIds: [insuranceRuleId],
         complianceRationale:
           'Police d’assurance médicale internationale conforme au Règlement CE n° 810/2009 (Art. 15).',
       };
